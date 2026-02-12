@@ -15,18 +15,28 @@ function formatARS(cents) {
 export default function App() {
   const scannerRef = useRef(null);
   const restartingRef = useRef(false);
+  const beepRef = useRef(null);
 
-  const [mode, setMode] = useState("scanning"); // scanning | loading | result | error
+  const [mode, setMode] = useState("scanning");
   const [productName, setProductName] = useState("");
   const [price, setPrice] = useState("");
   const [error, setError] = useState("");
-  const [lastScan, setLastScan] = useState("");
 
-  // Ajustes kiosco
-  const RESET_MS = 7000; // cuánto tiempo queda el precio visible
-  const ERROR_RESET_MS = 2500; // cuánto queda el error visible
-  const FPS = 10;
-  const QR_BOX = 260;
+  const RESET_MS = 7000;
+  const ERROR_RESET_MS = 2500;
+
+  // 🔊 Inicializar sonido
+  useEffect(() => {
+    beepRef.current = new Audio("/beep.mp3");
+  }, []);
+
+  // 🖥 Fullscreen automático
+  function enableFullscreen() {
+    const el = document.documentElement;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(() => {});
+    }
+  }
 
   async function stopScanner() {
     const s = scannerRef.current;
@@ -46,12 +56,8 @@ export default function App() {
 
     try {
       setError("");
-      setProductName("");
-      setPrice("");
-      setLastScan("");
       setMode("scanning");
 
-      // Asegura que el contenedor exista
       const el = document.getElementById("reader");
       if (el) el.innerHTML = "";
 
@@ -62,207 +68,116 @@ export default function App() {
 
       await scanner.start(
         { facingMode: "environment" },
-        { fps: FPS, qrbox: QR_BOX },
+        { fps: 10, qrbox: 260 },
         async (decodedText) => {
-          // Evitar múltiples lecturas seguidas
           await stopScanner();
-
-          setLastScan(decodedText);
           setMode("loading");
 
-          // feedback suave
+          // 🔊 Beep
           try {
-            if (navigator.vibrate) navigator.vibrate(30);
+            beepRef.current?.play();
+          } catch {}
+
+          // 📳 Vibración
+          try {
+            navigator.vibrate?.(40);
           } catch {}
 
           try {
-            if (!API) throw new Error("VITE_API_BASE no está configurado");
-
             const r = await fetch(`${API}/resolve`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ url: decodedText }),
             });
 
-            const bodyText = await r.text();
-            if (!r.ok) throw new Error(bodyText || `HTTP ${r.status}`);
+            if (!r.ok) throw new Error("Error consultando precio");
 
-            const data = JSON.parse(bodyText);
+            const data = await r.json();
 
             setProductName(data.productName || "Producto");
             setPrice(formatARS(data.sellingPrice ?? data.price));
             setMode("result");
 
-            setTimeout(() => {
-              startScanner();
-            }, RESET_MS);
+            setTimeout(startScanner, RESET_MS);
           } catch (e) {
+            setError(String(e.message || e));
             setMode("error");
-            setError(String(e?.message || e));
-
-            setTimeout(() => {
-              startScanner();
-            }, ERROR_RESET_MS);
+            setTimeout(startScanner, ERROR_RESET_MS);
           }
         }
       );
-    } catch (e) {
-      setMode("error");
-      setError(String(e?.message || e));
-      setTimeout(() => startScanner(), ERROR_RESET_MS);
     } finally {
       restartingRef.current = false;
     }
   }
 
   useEffect(() => {
-    // Arranca solo al cargar
     startScanner();
-
-    // Limpieza al salir
-    return () => {
-      stopScanner();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => stopScanner();
   }, []);
 
   return (
     <div
+      onClick={enableFullscreen}
       style={{
         minHeight: "100vh",
         background: "#111",
-        color: "#eee",
-        padding: 28,
+        color: "#fff",
+        padding: 30,
         fontFamily: "system-ui",
+        textAlign: "center",
       }}
     >
-      {/* Header centrado */}
-      <div style={{ textAlign: "center", marginBottom: 28 }}>
-        <img
-          src="/logo.png?v=2"
-          alt="Tienda Colucci"
-          style={{
-            height: 90,
-            width: "auto",
-            objectFit: "contain",
-            marginBottom: 18,
-          }}
-          onError={(e) => {
-            e.currentTarget.style.display = "none";
-          }}
-        />
+      {/* Logo */}
+      <img
+        src="/logo.png?v=3"
+        alt="Tienda Colucci"
+        style={{ height: 100, marginBottom: 20 }}
+      />
 
-        <div style={{ fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
-          Consulta de precios
-        </div>
-
-        <div style={{ opacity: 0.75, marginTop: 10, fontSize: 22 }}>
-          Escaneá el producto para ver el precio
-        </div>
+      <div style={{ fontSize: 48, fontWeight: 900 }}>
+        Consulta de precios
       </div>
 
-      {/* Body */}
+      <div style={{ opacity: 0.7, fontSize: 22, marginBottom: 30 }}>
+        Escaneá el producto para ver el precio
+      </div>
+
       <div
+        id="reader"
         style={{
-          display: "grid",
-          gap: 16,
-          justifyItems: "center",
+          display: mode === "scanning" ? "block" : "none",
+          maxWidth: 700,
+          margin: "0 auto",
         }}
-      >
-        {/* Scanner container */}
-        <div
-          id="reader"
-          style={{
-            width: "100%",
-            maxWidth: 720,
-            borderRadius: 18,
-            overflow: "hidden",
-            background: "#1b1b1b",
-            display: mode === "scanning" ? "block" : "none",
-          }}
-        />
+      />
 
-        {mode === "loading" && (
-          <div style={{ fontSize: 24, opacity: 0.85 }}>Consultando precio…</div>
-        )}
+      {mode === "loading" && <div>Consultando...</div>}
 
-        {mode === "result" && (
+      {mode === "result" && (
+        <div>
+          <div style={{ fontSize: 32, marginTop: 20 }}>
+            {productName}
+          </div>
           <div
             style={{
-              background: "#0f172a",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 18,
-              padding: 22,
-              maxWidth: 960,
-              width: "100%",
+              fontSize: 110,
+              fontWeight: 1000,
+              marginTop: 10,
+              color: "#00ff88",
             }}
           >
-            <div style={{ fontSize: 30, opacity: 0.9, textAlign: "center" }}>
-              {productName}
-            </div>
-
-            <div
-              style={{
-                fontSize: 110,
-                fontWeight: 1000,
-                marginTop: 12,
-                textAlign: "center",
-              }}
-            >
-              {price}
-            </div>
-
-            <div style={{ marginTop: 6, opacity: 0.65, textAlign: "center" }}>
-              Volviendo a escanear…
-            </div>
+            {price}
           </div>
-        )}
+          <div style={{ opacity: 0.6 }}>Volviendo a escanear...</div>
+        </div>
+      )}
 
-        {mode === "error" && (
-          <div
-            style={{
-              background: "#2a0f0f",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 18,
-              padding: 18,
-              maxWidth: 960,
-              width: "100%",
-            }}
-          >
-            <div style={{ fontSize: 22, fontWeight: 800, textAlign: "center" }}>
-              No se pudo consultar
-            </div>
-
-            {lastScan && (
-              <div
-                style={{
-                  marginTop: 6,
-                  opacity: 0.7,
-                  wordBreak: "break-word",
-                  textAlign: "center",
-                }}
-              >
-                QR leído: {lastScan}
-              </div>
-            )}
-
-            <div
-              style={{
-                marginTop: 10,
-                opacity: 0.85,
-                whiteSpace: "pre-wrap",
-                textAlign: "center",
-              }}
-            >
-              {error}
-            </div>
-
-            <div style={{ marginTop: 8, opacity: 0.65, textAlign: "center" }}>
-              Reintentando automáticamente…
-            </div>
-          </div>
-        )}
-      </div>
+      {mode === "error" && (
+        <div style={{ color: "#ff4444" }}>
+          {error}
+        </div>
+      )}
     </div>
   );
 }
