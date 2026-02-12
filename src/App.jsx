@@ -136,35 +136,45 @@ export default function App() {
         fontFamily: "system-ui",
       }}
     >
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+      {/* Header centrado */}
+      <div style={{ textAlign: "center", marginBottom: 28 }}>
         <img
-          src="/logo.png"
+          src="/logo.png?v=2"
           alt="Tienda Colucci"
-          style={{ height: 54, width: "auto", objectFit: "contain" }}
+          style={{
+            height: 90,
+            width: "auto",
+            objectFit: "contain",
+            marginBottom: 18,
+          }}
           onError={(e) => {
-            // si no hay logo, ocultar img para que no rompa
             e.currentTarget.style.display = "none";
           }}
         />
-        <div>
-          <div style={{ fontSize: 44, fontWeight: 900, lineHeight: 1 }}>
-            Consulta de precios
-          </div>
-          <div style={{ opacity: 0.75, marginTop: 6, fontSize: 18 }}>
-            Escaneá el producto para ver el precio
-          </div>
+
+        <div style={{ fontSize: 48, fontWeight: 900, lineHeight: 1.1 }}>
+          Consulta de precios
+        </div>
+
+        <div style={{ opacity: 0.75, marginTop: 10, fontSize: 22 }}>
+          Escaneá el producto para ver el precio
         </div>
       </div>
 
       {/* Body */}
-      <div style={{ marginTop: 26, display: "grid", gap: 16 }}>
+      <div
+        style={{
+          display: "grid",
+          gap: 16,
+          justifyItems: "center",
+        }}
+      >
         {/* Scanner container */}
         <div
           id="reader"
           style={{
             width: "100%",
-            maxWidth: 640,
+            maxWidth: 720,
             borderRadius: 18,
             overflow: "hidden",
             background: "#1b1b1b",
@@ -183,14 +193,26 @@ export default function App() {
               border: "1px solid rgba(255,255,255,0.08)",
               borderRadius: 18,
               padding: 22,
-              maxWidth: 900,
+              maxWidth: 960,
+              width: "100%",
             }}
           >
-            <div style={{ fontSize: 26, opacity: 0.85 }}>{productName}</div>
-            <div style={{ fontSize: 88, fontWeight: 950, marginTop: 8 }}>
+            <div style={{ fontSize: 30, opacity: 0.9, textAlign: "center" }}>
+              {productName}
+            </div>
+
+            <div
+              style={{
+                fontSize: 110,
+                fontWeight: 1000,
+                marginTop: 12,
+                textAlign: "center",
+              }}
+            >
               {price}
             </div>
-            <div style={{ marginTop: 6, opacity: 0.65 }}>
+
+            <div style={{ marginTop: 6, opacity: 0.65, textAlign: "center" }}>
               Volviendo a escanear…
             </div>
           </div>
@@ -203,21 +225,39 @@ export default function App() {
               border: "1px solid rgba(255,255,255,0.08)",
               borderRadius: 18,
               padding: 18,
-              maxWidth: 900,
+              maxWidth: 960,
+              width: "100%",
             }}
           >
-            <div style={{ fontSize: 22, fontWeight: 800 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, textAlign: "center" }}>
               No se pudo consultar
             </div>
+
             {lastScan && (
-              <div style={{ marginTop: 6, opacity: 0.7, wordBreak: "break-word" }}>
+              <div
+                style={{
+                  marginTop: 6,
+                  opacity: 0.7,
+                  wordBreak: "break-word",
+                  textAlign: "center",
+                }}
+              >
                 QR leído: {lastScan}
               </div>
             )}
-            <div style={{ marginTop: 10, opacity: 0.8, whiteSpace: "pre-wrap" }}>
+
+            <div
+              style={{
+                marginTop: 10,
+                opacity: 0.85,
+                whiteSpace: "pre-wrap",
+                textAlign: "center",
+              }}
+            >
               {error}
             </div>
-            <div style={{ marginTop: 8, opacity: 0.65 }}>
+
+            <div style={{ marginTop: 8, opacity: 0.65, textAlign: "center" }}>
               Reintentando automáticamente…
             </div>
           </div>
