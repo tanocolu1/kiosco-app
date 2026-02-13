@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 
 const API = import.meta.env.VITE_API_BASE;
+const NO_PRICE_MSG = "No encontramos el precio. Consultá a un vendedor.";
 
 function formatARS(cents) {
   if (cents == null) return "";
@@ -20,8 +21,14 @@ function useIsLandscape() {
   useEffect(() => {
     const mq = window.matchMedia("(orientation: landscape)");
     const handler = () => setIsLandscape(mq.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+
+    if (mq.addEventListener) mq.addEventListener("change", handler);
+    else mq.addListener(handler);
+
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", handler);
+      else mq.removeListener(handler);
+    };
   }, []);
 
   return isLandscape;
@@ -34,7 +41,7 @@ export default function App() {
 
   const isLandscape = useIsLandscape();
 
-  const [mode, setMode] = useState("scanning");
+  const [mode, setMode] = useState("scanning"); // scanning | loading | result | error
   const [productName, setProductName] = useState("");
   const [price, setPrice] = useState("");
   const [error, setError] = useState("");
@@ -77,6 +84,8 @@ export default function App() {
 
     try {
       setError("");
+      setProductName("");
+      setPrice("");
       setMode("scanning");
 
       const el = document.getElementById("reader");
@@ -94,36 +103,53 @@ export default function App() {
           await stopScanner();
           setMode("loading");
 
+          // 🔊 beep + vibración (si está disponible)
           try {
             beepRef.current.currentTime = 0;
             await beepRef.current.play();
           } catch {}
-
-          navigator.vibrate?.(40);
+          try {
+            navigator.vibrate?.(40);
+          } catch {}
 
           try {
+            if (!API) throw new Error(NO_PRICE_MSG);
+
             const r = await fetch(`${API}/resolve`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ url: decodedText }),
             });
 
-            if (!r.ok) throw new Error("Error consultando precio");
+            const text = await r.text();
 
-            const data = await r.json();
+            // Si el backend no respondió OK, mensaje amigable
+            if (!r.ok) throw new Error(NO_PRICE_MSG);
+
+            const data = JSON.parse(text);
+            const cents = data.sellingPrice ?? data.price;
+
+            // OK pero sin precio válido
+            if (cents == null || Number.isNaN(Number(cents)) || Number(cents) <= 0) {
+              throw new Error(NO_PRICE_MSG);
+            }
 
             setProductName(data.productName || "Producto");
-            setPrice(formatARS(data.sellingPrice ?? data.price));
+            setPrice(formatARS(Number(cents)));
             setMode("result");
 
             setTimeout(startScanner, RESET_MS);
           } catch (e) {
-            setError(String(e.message || e));
+            setError(NO_PRICE_MSG);
             setMode("error");
             setTimeout(startScanner, ERROR_RESET_MS);
           }
         }
       );
+    } catch (e) {
+      setError(NO_PRICE_MSG);
+      setMode("error");
+      setTimeout(startScanner, ERROR_RESET_MS);
     } finally {
       restartingRef.current = false;
     }
@@ -132,6 +158,7 @@ export default function App() {
   useEffect(() => {
     startScanner();
     return () => stopScanner();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLandscape]);
 
   return (
@@ -161,7 +188,7 @@ export default function App() {
       {/* Header */}
       <div style={{ textAlign: "center", marginBottom: "2vh" }}>
         <img
-          src="/logo.png?v=7"
+          src="/logo.png?v=8"
           alt="Tienda Colucci"
           style={{
             width: "clamp(140px, 18vw, 260px)",
@@ -171,7 +198,13 @@ export default function App() {
         <div style={{ fontSize: "clamp(26px, 3vw, 52px)", fontWeight: 900 }}>
           Consulta de precios
         </div>
-        <div style={{ opacity: 0.7, marginTop: 6, fontSize: "clamp(16px, 1.6vw, 22px)" }}>
+        <div
+          style={{
+            opacity: 0.7,
+            marginTop: 6,
+            fontSize: "clamp(16px, 1.6vw, 22px)",
+          }}
+        >
           Escaneá el producto para ver el precio
         </div>
       </div>
@@ -188,11 +221,24 @@ export default function App() {
         {/* Scanner */}
         <div style={{ width: "100%" }}>
           {(mode === "scanning" || mode === "loading") && (
-            <div id="reader" style={{ borderRadius: 16, overflow: "hidden" }} />
+            <div
+              id="reader"
+              style={{
+                borderRadius: 16,
+                overflow: "hidden",
+                background: "#1b1b1b",
+              }}
+            />
+          )}
+
+          {mode === "loading" && (
+            <div style={{ marginTop: 14, textAlign: "center", opacity: 0.85, fontSize: 22 }}>
+              Consultando precio…
+            </div>
           )}
         </div>
 
-        {/* Resultado */}
+        {/* Resultado / Error */}
         <div style={{ width: "100%", textAlign: "center" }}>
           {mode === "result" && (
             <>
@@ -220,8 +266,41 @@ export default function App() {
           )}
 
           {mode === "error" && (
-            <div style={{ color: "#ff4444" }}>
-              {error}
+            <div
+              style={{
+                background: "#2a0f0f",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 18,
+                padding: "2vh 2vw",
+                color: "#ffdddd",
+              }}
+            >
+              <div style={{ fontSize: "clamp(18px, 2vw, 28px)", fontWeight: 900 }}>
+                Sin precio disponible
+              </div>
+              <div style={{ marginTop: 10, opacity: 0.9 }}>{error}</div>
+              <div style={{ marginTop: 10, opacity: 0.7 }}>
+                Consultá a un vendedor.
+              </div>
+            </div>
+          )}
+
+          {/* Panel informativo en horizontal mientras escanea */}
+          {isLandscape && mode === "scanning" && (
+            <div
+              style={{
+                border: "1px dashed rgba(255,255,255,0.18)",
+                borderRadius: 18,
+                padding: "3vh 2vw",
+                opacity: 0.65,
+              }}
+            >
+              <div style={{ fontSize: "clamp(18px, 2vw, 28px)", fontWeight: 800 }}>
+                Listo para escanear
+              </div>
+              <div style={{ marginTop: 10, fontSize: "clamp(14px, 1.4vw, 20px)" }}>
+                Apuntá la cámara al QR del producto
+              </div>
             </div>
           )}
         </div>
