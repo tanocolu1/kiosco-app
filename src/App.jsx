@@ -59,16 +59,27 @@ export default function App() {
     }
   }
 
+  // ✅ Stop + clear + wipe DOM (robusto)
   async function stopScanner() {
     const s = scannerRef.current;
     if (!s) return;
+
     try {
-      if (s.isScanning) await s.stop();
-    } catch {}
+      if (s.isScanning) {
+        await s.stop();
+      }
+    } catch (e) {
+      console.log("Error stopping scanner:", e);
+    }
+
     try {
       await s.clear();
     } catch {}
+
     scannerRef.current = null;
+
+    const el = document.getElementById("reader");
+    if (el) el.innerHTML = "";
   }
 
   const qrboxSize = useMemo(() => {
@@ -88,10 +99,10 @@ export default function App() {
       setPrice("");
       setMode("scanning");
 
+      await stopScanner();
+
       const el = document.getElementById("reader");
       if (el) el.innerHTML = "";
-
-      await stopScanner();
 
       const scanner = new Html5Qrcode("reader");
       scannerRef.current = scanner;
@@ -100,10 +111,11 @@ export default function App() {
         { facingMode: "environment" },
         { fps: 10, qrbox: qrboxSize },
         async (decodedText) => {
+          // Parar scanner inmediatamente para evitar doble lectura
           await stopScanner();
           setMode("loading");
 
-          // 🔊 beep + vibración (si está disponible)
+          // 🔊 beep + vibración
           try {
             beepRef.current.currentTime = 0;
             await beepRef.current.play();
@@ -123,7 +135,7 @@ export default function App() {
 
             const text = await r.text();
 
-            // Si el backend no respondió OK, mensaje amigable
+            // Backend no OK → mensaje amigable
             if (!r.ok) throw new Error(NO_PRICE_MSG);
 
             const data = JSON.parse(text);
@@ -138,18 +150,34 @@ export default function App() {
             setPrice(formatARS(Number(cents)));
             setMode("result");
 
-            setTimeout(startScanner, RESET_MS);
+            // ✅ Reset robusto
+            setTimeout(async () => {
+              await stopScanner();
+              await new Promise((res) => setTimeout(res, 250)); // pequeño delay evita bugs en Android
+              startScanner();
+            }, RESET_MS);
           } catch (e) {
             setError(NO_PRICE_MSG);
             setMode("error");
-            setTimeout(startScanner, ERROR_RESET_MS);
+
+            // ✅ Reset robusto también en error
+            setTimeout(async () => {
+              await stopScanner();
+              await new Promise((res) => setTimeout(res, 250));
+              startScanner();
+            }, ERROR_RESET_MS);
           }
         }
       );
     } catch (e) {
-      setError(NO_PRICE_MSG);
+      setError(String(e?.message || e));
       setMode("error");
-      setTimeout(startScanner, ERROR_RESET_MS);
+
+      setTimeout(async () => {
+        await stopScanner();
+        await new Promise((res) => setTimeout(res, 250));
+        startScanner();
+      }, ERROR_RESET_MS);
     } finally {
       restartingRef.current = false;
     }
@@ -188,7 +216,7 @@ export default function App() {
       {/* Header */}
       <div style={{ textAlign: "center", marginBottom: "2vh" }}>
         <img
-          src="/logo.png?v=8"
+          src="/logo.png?v=9"
           alt="Tienda Colucci"
           style={{
             width: "clamp(140px, 18vw, 260px)",
@@ -285,7 +313,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Panel informativo en horizontal mientras escanea */}
           {isLandscape && mode === "scanning" && (
             <div
               style={{
