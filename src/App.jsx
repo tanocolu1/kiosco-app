@@ -14,20 +14,14 @@ function formatARS(cents) {
 
 function useIsLandscape() {
   const [isLandscape, setIsLandscape] = useState(
-    typeof window !== "undefined" ? window.matchMedia("(orientation: landscape)").matches : false
+    window.matchMedia("(orientation: landscape)").matches
   );
 
   useEffect(() => {
     const mq = window.matchMedia("(orientation: landscape)");
     const handler = () => setIsLandscape(mq.matches);
-    // Safari compatibility
-    if (mq.addEventListener) mq.addEventListener("change", handler);
-    else mq.addListener(handler);
-    handler();
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener("change", handler);
-      else mq.removeListener(handler);
-    };
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
   }, []);
 
   return isLandscape;
@@ -40,7 +34,7 @@ export default function App() {
 
   const isLandscape = useIsLandscape();
 
-  const [mode, setMode] = useState("scanning"); // scanning | loading | result | error
+  const [mode, setMode] = useState("scanning");
   const [productName, setProductName] = useState("");
   const [price, setPrice] = useState("");
   const [error, setError] = useState("");
@@ -71,11 +65,10 @@ export default function App() {
   }
 
   const qrboxSize = useMemo(() => {
-    const w = window.innerWidth || 800;
-    const h = window.innerHeight || 600;
-    // En horizontal, QR box más grande
-    if (w > h) return Math.min(w * 0.28, 380);
-    return Math.min(w * 0.55, 350);
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    if (w > h) return Math.min(w * 0.3, 420);
+    return Math.min(w * 0.55, 360);
   }, [isLandscape]);
 
   async function startScanner() {
@@ -84,8 +77,6 @@ export default function App() {
 
     try {
       setError("");
-      setProductName("");
-      setPrice("");
       setMode("scanning");
 
       const el = document.getElementById("reader");
@@ -103,28 +94,23 @@ export default function App() {
           await stopScanner();
           setMode("loading");
 
-          // 🔊 beep + vibración
           try {
-            beepRef.current?.currentTime && (beepRef.current.currentTime = 0);
-            await beepRef.current?.play();
-          } catch {}
-          try {
-            navigator.vibrate?.(40);
+            beepRef.current.currentTime = 0;
+            await beepRef.current.play();
           } catch {}
 
-          try {
-            if (!API) throw new Error("VITE_API_BASE no está configurado");
+          navigator.vibrate?.(40);
 
+          try {
             const r = await fetch(`${API}/resolve`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ url: decodedText }),
             });
 
-            const body = await r.text();
-            if (!r.ok) throw new Error(body || `HTTP ${r.status}`);
+            if (!r.ok) throw new Error("Error consultando precio");
 
-            const data = JSON.parse(body);
+            const data = await r.json();
 
             setProductName(data.productName || "Producto");
             setPrice(formatARS(data.sellingPrice ?? data.price));
@@ -132,16 +118,12 @@ export default function App() {
 
             setTimeout(startScanner, RESET_MS);
           } catch (e) {
-            setError(String(e?.message || e));
+            setError(String(e.message || e));
             setMode("error");
             setTimeout(startScanner, ERROR_RESET_MS);
           }
         }
       );
-    } catch (e) {
-      setError(String(e?.message || e));
-      setMode("error");
-      setTimeout(startScanner, ERROR_RESET_MS);
     } finally {
       restartingRef.current = false;
     }
@@ -150,8 +132,7 @@ export default function App() {
   useEffect(() => {
     startScanner();
     return () => stopScanner();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLandscape]); // reinicia scanner al rotar (mejor UX)
+  }, [isLandscape]);
 
   return (
     <div
@@ -164,21 +145,33 @@ export default function App() {
         fontFamily: "system-ui",
       }}
     >
+      {/* Forzar ancho completo del scanner */}
+      <style>{`
+        #reader,
+        #reader > div,
+        #reader video,
+        #reader canvas,
+        #reader__scan_region {
+          width: 100% !important;
+          max-width: 100% !important;
+          height: auto !important;
+        }
+      `}</style>
+
       {/* Header */}
-      <div style={{ textAlign: "center", marginBottom: "2.2vh" }}>
+      <div style={{ textAlign: "center", marginBottom: "2vh" }}>
         <img
-          src="/logo.png?v=6"
+          src="/logo.png?v=7"
           alt="Tienda Colucci"
           style={{
             width: "clamp(140px, 18vw, 260px)",
-            height: "auto",
-            marginBottom: "1.6vh",
+            marginBottom: "1.5vh",
           }}
         />
-        <div style={{ fontSize: "clamp(26px, 3.2vw, 54px)", fontWeight: 900, lineHeight: 1.1 }}>
+        <div style={{ fontSize: "clamp(26px, 3vw, 52px)", fontWeight: 900 }}>
           Consulta de precios
         </div>
-        <div style={{ opacity: 0.72, marginTop: 8, fontSize: "clamp(16px, 1.7vw, 24px)" }}>
+        <div style={{ opacity: 0.7, marginTop: 6, fontSize: "clamp(16px, 1.6vw, 22px)" }}>
           Escaneá el producto para ver el precio
         </div>
       </div>
@@ -187,117 +180,48 @@ export default function App() {
       <div
         style={{
           display: "grid",
-          gap: "2.2vw",
+          gap: "2vw",
           alignItems: "center",
           gridTemplateColumns: isLandscape ? "1fr 1.4fr" : "1fr",
         }}
       >
         {/* Scanner */}
-        <div
-          style={{
-            display: mode === "scanning" || mode === "loading" ? "block" : "none",
-            width: "100%",
-          }}
-        >
-          <div
-            id="reader"
-            style={{
-              width: "100%",
-              borderRadius: 18,
-              overflow: "hidden",
-              background: "#1b1b1b",
-              // En horizontal, dejamos que use todo el ancho de la columna
-              maxWidth: isLandscape ? "unset" : 720,
-              margin: isLandscape ? "0" : "0 auto",
-            }}
-          />
-          {mode === "loading" && (
-            <div style={{ marginTop: 14, textAlign: "center", opacity: 0.85, fontSize: 22 }}>
-              Consultando precio…
-            </div>
+        <div style={{ width: "100%" }}>
+          {(mode === "scanning" || mode === "loading") && (
+            <div id="reader" style={{ borderRadius: 16, overflow: "hidden" }} />
           )}
         </div>
 
-        {/* Resultado / Error */}
-        <div style={{ width: "100%" }}>
+        {/* Resultado */}
+        <div style={{ width: "100%", textAlign: "center" }}>
           {mode === "result" && (
-            <div
-              style={{
-                background: "#0f172a",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 18,
-                padding: "2.2vh 2.2vw",
-                width: "100%",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "clamp(18px, 2.2vw, 34px)",
-                  opacity: 0.92,
-                  textAlign: "center",
-                }}
-              >
+            <>
+              <div style={{ fontSize: "clamp(18px, 2vw, 32px)", opacity: 0.9 }}>
                 {productName}
               </div>
 
-              {/* ✅ En horizontal ocupa todo el ancho */}
               <div
                 style={{
-                  width: "100%",
                   fontSize: isLandscape
-                    ? "clamp(72px, 8.5vw, 170px)" // enorme y ancho
-                    : "clamp(54px, 10vw, 140px)",
+                    ? "clamp(80px, 9vw, 170px)"
+                    : "clamp(60px, 10vw, 140px)",
                   fontWeight: 1000,
-                  marginTop: "1.2vh",
-                  textAlign: "center",
-                  letterSpacing: "-0.02em",
                   color: "#00ff88",
+                  marginTop: "1vh",
                 }}
               >
                 {price}
               </div>
 
-              <div style={{ marginTop: 10, opacity: 0.65, textAlign: "center" }}>
-                Volviendo a escanear…
+              <div style={{ opacity: 0.6, marginTop: "1vh" }}>
+                Volviendo a escanear...
               </div>
-            </div>
+            </>
           )}
 
           {mode === "error" && (
-            <div
-              style={{
-                background: "#2a0f0f",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 18,
-                padding: "2vh 2vw",
-                width: "100%",
-                textAlign: "center",
-              }}
-            >
-              <div style={{ fontSize: 22, fontWeight: 900 }}>No se pudo consultar</div>
-              <div style={{ marginTop: 10, opacity: 0.85, whiteSpace: "pre-wrap" }}>{error}</div>
-              <div style={{ marginTop: 10, opacity: 0.65 }}>Reintentando automáticamente…</div>
-            </div>
-          )}
-
-          {/* En modo scanning (sin resultado aún), mostramos un panel “vacío” en horizontal
-              para que la columna derecha no quede vacía */}
-          {isLandscape && mode === "scanning" && (
-            <div
-              style={{
-                border: "1px dashed rgba(255,255,255,0.18)",
-                borderRadius: 18,
-                padding: "3vh 2vw",
-                opacity: 0.6,
-                textAlign: "center",
-              }}
-            >
-              <div style={{ fontSize: "clamp(18px, 2vw, 28px)", fontWeight: 800 }}>
-                Listo para escanear
-              </div>
-              <div style={{ marginTop: 10, fontSize: "clamp(14px, 1.4vw, 20px)" }}>
-                Apuntá la cámara al QR del producto
-              </div>
+            <div style={{ color: "#ff4444" }}>
+              {error}
             </div>
           )}
         </div>
