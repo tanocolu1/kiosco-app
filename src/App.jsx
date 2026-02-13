@@ -248,17 +248,16 @@ export default function App() {
       >
         {/* Scanner */}
         <div style={{ width: "100%" }}>
-          {(mode === "scanning" || mode === "loading") && (
-            <div
-              id="reader"
-              style={{
-                borderRadius: 16,
-                overflow: "hidden",
-                background: "#1b1b1b",
-              }}
-            />
-          )}
-
+         <div
+  id="reader"
+  style={{
+    display: mode === "scanning" || mode === "loading" ? "block" : "none",
+    borderRadius: 16,
+    overflow: "hidden",
+    background: "#1b1b1b",
+    width: "100%",
+  }}
+/>
           {mode === "loading" && (
             <div style={{ marginTop: 14, textAlign: "center", opacity: 0.85, fontSize: 22 }}>
               Consultando precio…
