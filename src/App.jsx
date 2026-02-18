@@ -377,7 +377,7 @@ export default function App() {
               cursor: "pointer",
             }}
           >
-            Escáner (USB/Bluetooth)
+            Escáner
           </button>
         </div>
 
