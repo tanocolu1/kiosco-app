@@ -1,37 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 
-const API = import.meta.env.VITE_API_BASE;
-const NO_PRICE_MSG = "No encontramos el precio. Consultá a un vendedor.";
+const API            = import.meta.env.VITE_API_BASE;
+const NO_PRICE_MSG   = "No encontramos el precio. Consultá a un vendedor.";
+const RESET_MS       = 7000;
+const ERROR_RESET_MS = 2500;
+
+const priceCache = new Map();
+const CACHE_TTL  = 60_000;
 
 function formatARS(cents) {
   if (cents == null) return "";
   return (cents / 100).toLocaleString("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    maximumFractionDigits: 0,
+    style: "currency", currency: "ARS", maximumFractionDigits: 0,
   });
-}
-
-function useIsLandscape() {
-  const [isLandscape, setIsLandscape] = useState(
-    window.matchMedia("(orientation: landscape)").matches
-  );
-
-  useEffect(() => {
-    const mq = window.matchMedia("(orientation: landscape)");
-    const handler = () => setIsLandscape(mq.matches);
-
-    if (mq.addEventListener) mq.addEventListener("change", handler);
-    else mq.addListener(handler);
-
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener("change", handler);
-      else mq.removeListener(handler);
-    };
-  }, []);
-
-  return isLandscape;
 }
 
 async function hasAnyCamera() {
@@ -39,441 +21,277 @@ async function hasAnyCamera() {
     if (!navigator.mediaDevices?.enumerateDevices) return false;
     const devices = await navigator.mediaDevices.enumerateDevices();
     return devices.some((d) => d.kind === "videoinput");
-  } catch {
-    return false;
-  }
+  } catch { return false; }
+}
+
+function httpErrorMessage(status) {
+  if (status === 404) return "Producto no encontrado en el sistema.";
+  if (status >= 500) return "Error del servidor. Intentá de nuevo.";
+  return NO_PRICE_MSG;
+}
+
+function useIsLandscape() {
+  const [isLandscape, setIsLandscape] = useState(
+    () => window.matchMedia("(orientation: landscape)").matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: landscape)");
+    const handler = (e) => setIsLandscape(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return isLandscape;
+}
+
+function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const up   = () => setIsOnline(true);
+    const down = () => setIsOnline(false);
+    window.addEventListener("online",  up);
+    window.addEventListener("offline", down);
+    return () => {
+      window.removeEventListener("online",  up);
+      window.removeEventListener("offline", down);
+    };
+  }, []);
+  return isOnline;
 }
 
 export default function App() {
   const isLandscape = useIsLandscape();
+  const isOnline    = useOnlineStatus();
 
-  const scannerRef = useRef(null);
+  const scannerRef    = useRef(null);
   const restartingRef = useRef(false);
+  const abortRef      = useRef(null);
+  const resetTimerRef = useRef(null);
+  const beepRef       = useRef(null);
+  const audioUnlocked = useRef(false);
+  const inputRef      = useRef(null);
+  const bufferRef     = useRef("");
 
-  const beepRef = useRef(null);
-
-  // HID “teclado”
-  const inputRef = useRef(null);
-  const bufferRef = useRef("");
-
-  // camera | hid
-  const [scanSource, setScanSource] = useState("camera");
-
-  // scanning | loading | result | error
-  const [mode, setMode] = useState("scanning");
+  const [scanSource,  setScanSource]  = useState("camera");
+  const [mode,        setMode]        = useState("scanning");
   const [productName, setProductName] = useState("");
-  const [price, setPrice] = useState("");
-  const [error, setError] = useState("");
+  const [price,       setPrice]       = useState("");
+  const [errorMsg,    setErrorMsg]    = useState("");
 
-  const RESET_MS = 7000;
-  const ERROR_RESET_MS = 2500;
+  useEffect(() => { beepRef.current = new Audio("/beep.mp3"); }, []);
 
-  useEffect(() => {
-    beepRef.current = new Audio("/beep.mp3");
-  }, []);
+  function unlockAudio() {
+    if (audioUnlocked.current || !beepRef.current) return;
+    beepRef.current.play()
+      .then(() => { beepRef.current.pause(); beepRef.current.currentTime = 0; })
+      .catch(() => {});
+    audioUnlocked.current = true;
+  }
+
+  async function playFeedback() {
+    try { beepRef.current.currentTime = 0; await beepRef.current.play(); } catch {}
+    try { navigator.vibrate?.(40); } catch {}
+  }
 
   function enableFullscreen() {
-    if (!document.fullscreenElement) {
+    if (!document.fullscreenElement)
       document.documentElement.requestFullscreen?.().catch(() => {});
-    }
   }
 
   async function stopScanner() {
     const s = scannerRef.current;
     if (!s) return;
-
-    try {
-      if (s.isScanning) await s.stop();
-    } catch {}
-
-    try {
-      await s.clear();
-    } catch {}
-
+    try { if (s.isScanning) await s.stop(); } catch {}
+    try { await s.clear(); } catch {}
     scannerRef.current = null;
-
     const el = document.getElementById("reader");
     if (el) el.innerHTML = "";
   }
 
   const qrboxSize = useMemo(() => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    if (w > h) return Math.min(w * 0.3, 420);
-    return Math.min(w * 0.55, 360);
+    const w = window.innerWidth, h = window.innerHeight;
+    return w > h ? Math.min(w * 0.3, 420) : Math.min(w * 0.55, 360);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLandscape]);
 
-  async function playFeedback() {
-    try {
-      beepRef.current.currentTime = 0;
-      await beepRef.current.play();
-    } catch {}
-    try {
-      navigator.vibrate?.(40);
-    } catch {}
+  function clearResetTimer() {
+    if (resetTimerRef.current) { clearTimeout(resetTimerRef.current); resetTimerRef.current = null; }
   }
 
-  async function fetchAndShow(codeOrUrl) {
-    setMode("loading");
-    setError("");
+  const scheduleReset = useCallback((delayMs, currentSource) => {
+    clearResetTimer();
+    resetTimerRef.current = setTimeout(async () => {
+      setMode("scanning"); setProductName(""); setPrice(""); setErrorMsg("");
+      if (currentSource === "hid") {
+        bufferRef.current = ""; inputRef.current?.focus(); return;
+      }
+      await stopScanner();
+      await new Promise((res) => setTimeout(res, 250));
+      startCameraScanner(); // eslint-disable-line no-use-before-define
+    }, delayMs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  const fetchAndShow = useCallback(async (codeOrUrl, currentSource) => {
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    setMode("loading"); setErrorMsg("");
     await playFeedback();
+
+    const cached = priceCache.get(codeOrUrl);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      const { data } = cached;
+      setProductName(data.productName || "Producto");
+      setPrice(formatARS(data.cents));
+      setMode("result");
+      scheduleReset(RESET_MS, currentSource);
+      return;
+    }
 
     try {
       if (!API) throw new Error(NO_PRICE_MSG);
-
       const r = await fetch(`${API}/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: codeOrUrl }),
+        signal: abortRef.current.signal,
       });
-
-      const txt = await r.text();
-      if (!r.ok) throw new Error(NO_PRICE_MSG);
-
-      const data = JSON.parse(txt);
+      if (!r.ok) throw new Error(httpErrorMessage(r.status));
+      const data  = await r.json();
       const cents = data.sellingPrice ?? data.price;
-
-      if (cents == null || Number.isNaN(Number(cents)) || Number(cents) <= 0) {
+      if (cents == null || Number.isNaN(Number(cents)) || Number(cents) <= 0)
         throw new Error(NO_PRICE_MSG);
-      }
-
+      const n = Number(cents);
+      priceCache.set(codeOrUrl, { data: { productName: data.productName, cents: n }, ts: Date.now() });
       setProductName(data.productName || "Producto");
-      setPrice(formatARS(Number(cents)));
+      setPrice(formatARS(n));
       setMode("result");
-
-      setTimeout(async () => {
-        setMode("scanning");
-        setProductName("");
-        setPrice("");
-        setError("");
-
-        if (scanSource === "hid") {
-          bufferRef.current = "";
-          inputRef.current?.focus();
-          return;
-        }
-
-        await stopScanner();
-        await new Promise((res) => setTimeout(res, 250));
-        startCameraScanner();
-      }, RESET_MS);
-    } catch {
-      setError(NO_PRICE_MSG);
+      scheduleReset(RESET_MS, currentSource);
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      setErrorMsg(err.message || NO_PRICE_MSG);
       setMode("error");
-
-      setTimeout(async () => {
-        setMode("scanning");
-        setProductName("");
-        setPrice("");
-        setError("");
-
-        if (scanSource === "hid") {
-          bufferRef.current = "";
-          inputRef.current?.focus();
-          return;
-        }
-
-        await stopScanner();
-        await new Promise((res) => setTimeout(res, 250));
-        startCameraScanner();
-      }, ERROR_RESET_MS);
+      scheduleReset(ERROR_RESET_MS, currentSource);
     }
-  }
+  }, [scheduleReset]);
 
-  async function startCameraScanner() {
+  const startCameraScanner = useCallback(async () => {
     if (restartingRef.current) return;
     restartingRef.current = true;
-
     try {
-      setScanSource("camera");
-      setMode("scanning");
-      setError("");
-      setProductName("");
-      setPrice("");
-
-      // reader SIEMPRE existe en el DOM
+      clearResetTimer();
+      setScanSource("camera"); setMode("scanning"); setErrorMsg(""); setProductName(""); setPrice("");
       const reader = document.getElementById("reader");
       if (!reader) throw new Error("Reader missing");
-
       await stopScanner();
-
       const scanner = new Html5Qrcode("reader");
       scannerRef.current = scanner;
-
       await scanner.start(
         { facingMode: "environment" },
         { fps: 10, qrbox: qrboxSize },
-        async (decodedText) => {
-          // parar para evitar doble lectura
-          await stopScanner();
-          await fetchAndShow(decodedText);
-        }
+        async (decodedText) => { await stopScanner(); await fetchAndShow(decodedText, "camera"); }
       );
-    } catch (e) {
-      // Si falla getUserMedia (NotFoundError, NotAllowedError, etc.) → HID
-      setScanSource("hid");
-      setMode("scanning");
-      setError(""); // no mostramos el error técnico
-      bufferRef.current = "";
-      inputRef.current?.focus();
+    } catch {
+      setScanSource("hid"); setMode("scanning"); setErrorMsg("");
+      bufferRef.current = ""; inputRef.current?.focus();
     } finally {
       restartingRef.current = false;
     }
-  }
+  }, [qrboxSize, fetchAndShow]);
 
-  function startHidMode() {
-    stopScanner();
-    setScanSource("hid");
-    setMode("scanning");
-    setError("");
-    setProductName("");
-    setPrice("");
-    bufferRef.current = "";
-    inputRef.current?.focus();
-  }
+  const startHidMode = useCallback(() => {
+    clearResetTimer(); stopScanner();
+    setScanSource("hid"); setMode("scanning"); setErrorMsg(""); setProductName(""); setPrice("");
+    bufferRef.current = ""; inputRef.current?.focus();
+  }, []);
 
-  // Listener global para capturar “teclado escáner”
   useEffect(() => {
     const onKeyDown = (e) => {
       if (scanSource !== "hid") return;
-
-      // Mantener foco en input invisible
-      if (document.activeElement !== inputRef.current) {
-        inputRef.current?.focus();
-      }
-
-      // Muchos scanners mandan Enter al final
+      if (document.activeElement !== inputRef.current) inputRef.current?.focus();
       if (e.key === "Enter") {
-        const value = (bufferRef.current || "").trim();
+        const value = bufferRef.current.trim();
         bufferRef.current = "";
-
-        if (value) {
-          fetchAndShow(value);
-        }
-        e.preventDefault();
-        return;
+        if (value) fetchAndShow(value, "hid");
+        e.preventDefault(); return;
       }
-
-      // Ignorar teclas especiales
       if (e.key.length !== 1) return;
-
       bufferRef.current += e.key;
     };
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [scanSource]);
+  }, [scanSource, fetchAndShow]);
 
-  // Arranque automático: si no hay cámara, cae a HID
   useEffect(() => {
     (async () => {
       const hasCam = await hasAnyCamera();
-      if (!hasCam) {
-        startHidMode();
-        return;
-      }
-      startCameraScanner();
+      hasCam ? startCameraScanner() : startHidMode();
     })();
-
-    return () => stopScanner();
+    return () => { clearResetTimer(); stopScanner(); abortRef.current?.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLandscape]);
+  }, []);
+
+  const showReader = scanSource === "camera" && (mode === "scanning" || mode === "loading");
 
   return (
     <div
-      onClick={() => {
-        enableFullscreen();
-        if (scanSource === "hid") inputRef.current?.focus();
-      }}
-      style={{
-        minHeight: "100vh",
-        background: "#111",
-        color: "#fff",
-        padding: "3vh 3vw",
-        fontFamily: "system-ui",
-      }}
+      className="kiosco-root"
+      onClick={() => { unlockAudio(); enableFullscreen(); if (scanSource === "hid") inputRef.current?.focus(); }}
     >
-      {/* Forzar ancho completo del scanner */}
-      <style>{`
-        #reader,
-        #reader > div,
-        #reader video,
-        #reader canvas,
-        #reader__scan_region {
-          width: 100% !important;
-          max-width: 100% !important;
-          height: auto !important;
-        }
-      `}</style>
+      <input ref={inputRef} inputMode="none" autoCapitalize="off" autoCorrect="off"
+        spellCheck={false} readOnly className="hid-input" />
 
-      {/* Input invisible para HID */}
-      <input
-        ref={inputRef}
-        inputMode="none"
-        autoCapitalize="off"
-        autoCorrect="off"
-        spellCheck={false}
-        style={{
-          position: "absolute",
-          opacity: 0,
-          height: 1,
-          width: 1,
-          left: -9999,
-          top: -9999,
-        }}
-        onChange={() => {}}
-      />
+      {!isOnline && (
+        <div className="offline-banner">⚠️ Sin conexión a internet — verificá la red del local</div>
+      )}
 
-      {/* Header */}
-      <div style={{ textAlign: "center", marginBottom: "2vh" }}>
-        <img
-          src="/logo.png?v=10"
-          alt="Tienda Colucci"
-          style={{
-            width: "clamp(140px, 18vw, 260px)",
-            marginBottom: "1.5vh",
-          }}
-        />
-        <div style={{ fontSize: "clamp(26px, 3vw, 52px)", fontWeight: 900 }}>
-          Consulta de precios
+      <header className="header">
+        <img src="/logo.png?v=10" alt="Tienda Colucci" className="header__logo" />
+        <h1 className="header__title">Consulta de precios</h1>
+        <p className="header__subtitle">
+          <span className={`status-dot status-dot--${mode === "loading" ? "yellow" : mode === "error" ? "red" : "green"}`} />
+          {mode === "loading" ? "Consultando…" : mode === "result" ? "Precio encontrado"
+            : mode === "error" ? "Sin precio" : "Escaneá el producto para ver el precio"}
+        </p>
+        <div className="mode-toggle">
+          <button className={`mode-toggle__btn ${scanSource === "camera" ? "mode-toggle__btn--active" : ""}`}
+            onClick={(e) => { e.stopPropagation(); startCameraScanner(); }}>📷 Cámara</button>
+          <button className={`mode-toggle__btn ${scanSource === "hid" ? "mode-toggle__btn--active" : ""}`}
+            onClick={(e) => { e.stopPropagation(); startHidMode(); }}>🔫 Escáner</button>
         </div>
-        <div style={{ opacity: 0.7, marginTop: 6, fontSize: "clamp(16px, 1.6vw, 22px)" }}>
-          Escaneá el producto para ver el precio
+        {scanSource === "hid" && <p className="hid-hint">Modo escáner activo — acercá el código al lector</p>}
+      </header>
+
+      <main className={`main-grid ${isLandscape ? "main-grid--landscape" : "main-grid--portrait"}`}>
+        <div className="camera-panel">
+          <div id="reader" className="camera-panel__reader" style={{ display: showReader ? "block" : "none" }} />
+          {scanSource === "camera" && mode === "loading" && <p className="camera-panel__loading">Consultando precio…</p>}
         </div>
 
-        {/* Selector modo */}
-        <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "center" }}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              startCameraScanner();
-            }}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.15)",
-              background: scanSource === "camera" ? "#1f3a2a" : "#1a1a1a",
-              color: "#fff",
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
-          >
-            Cámara
-          </button>
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              startHidMode();
-            }}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.15)",
-              background: scanSource === "hid" ? "#1f3a2a" : "#1a1a1a",
-              color: "#fff",
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
-          >
-            Escáner
-          </button>
-        </div>
-
-        {scanSource === "hid" && (
-          <div style={{ marginTop: 10, opacity: 0.7 }}>
-            Modo escáner activo: acercá el código al lector (envía Enter).
-          </div>
-        )}
-      </div>
-
-      {/* Layout */}
-      <div
-        style={{
-          display: "grid",
-          gap: "2vw",
-          alignItems: "center",
-          gridTemplateColumns: isLandscape ? "1fr 1.4fr" : "1fr",
-        }}
-      >
-        {/* Reader SIEMPRE existe, solo se oculta */}
-        <div style={{ width: "100%" }}>
-          <div
-            id="reader"
-            style={{
-              display: scanSource === "camera" && (mode === "scanning" || mode === "loading") ? "block" : "none",
-              borderRadius: 16,
-              overflow: "hidden",
-              background: "#1b1b1b",
-              width: "100%",
-            }}
-          />
-          {scanSource === "camera" && mode === "loading" && (
-            <div style={{ marginTop: 14, textAlign: "center", opacity: 0.85, fontSize: 22 }}>
-              Consultando precio…
-            </div>
-          )}
-        </div>
-
-        {/* Resultado / Error */}
-        <div style={{ width: "100%", textAlign: "center" }}>
+        <div className="result-panel">
           {mode === "result" && (
-            <>
-              <div style={{ fontSize: "clamp(18px, 2vw, 32px)", opacity: 0.9 }}>
-                {productName}
-              </div>
-              <div
-                style={{
-                  fontSize: isLandscape ? "clamp(80px, 9vw, 170px)" : "clamp(60px, 10vw, 140px)",
-                  fontWeight: 1000,
-                  color: "#00ff88",
-                  marginTop: "1vh",
-                }}
-              >
-                {price}
-              </div>
-              <div style={{ opacity: 0.6, marginTop: "1vh" }}>Listo para el próximo…</div>
-            </>
-          )}
-
-          {mode === "error" && (
-            <div
-              style={{
-                background: "#2a0f0f",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 18,
-                padding: "2vh 2vw",
-                color: "#ffdddd",
-              }}
-            >
-              <div style={{ fontSize: "clamp(18px, 2vw, 28px)", fontWeight: 900 }}>
-                Sin precio disponible
-              </div>
-              <div style={{ marginTop: 10, opacity: 0.9 }}>{error}</div>
-              <div style={{ marginTop: 10, opacity: 0.7 }}>Consultá a un vendedor.</div>
+            <div className="fade-in">
+              <p className="result-panel__name">{productName}</p>
+              <p className={`result-panel__price ${isLandscape ? "result-panel__price--lg" : "result-panel__price--sm"}`}>{price}</p>
+              <p className="result-panel__ready">Listo para el próximo…</p>
             </div>
           )}
-
+          {mode === "error" && (
+            <div className="error-panel fade-in">
+              <p className="error-panel__title">Sin precio disponible</p>
+              <p className="error-panel__msg">{errorMsg}</p>
+              <p className="error-panel__hint">Consultá a un vendedor.</p>
+            </div>
+          )}
           {mode === "scanning" && scanSource === "hid" && (
-            <div
-              style={{
-                border: "1px dashed rgba(255,255,255,0.18)",
-                borderRadius: 18,
-                padding: "3vh 2vw",
-                opacity: 0.75,
-              }}
-            >
-              <div style={{ fontSize: "clamp(18px, 2vw, 28px)", fontWeight: 800 }}>
-                Listo para escanear (lector)
-              </div>
-              <div style={{ marginTop: 10, fontSize: "clamp(14px, 1.4vw, 20px)" }}>
-                Apuntá el código al escáner. Se consulta automáticamente.
-              </div>
+            <div className="hid-waiting fade-in">
+              <p className="hid-waiting__title">Listo para escanear</p>
+              <p className="hid-waiting__sub">Apuntá el código al lector. El precio se muestra automáticamente.</p>
             </div>
           )}
         </div>
-      </div>
+      </main>
+
+      <footer className="footer">TIENDA COLUCCI · CONSULTA DE PRECIOS</footer>
     </div>
   );
 }
