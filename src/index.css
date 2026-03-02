@@ -1,18 +1,60 @@
+/* @import debe ir primero */
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700;900&family=Barlow:wght@400;500;600&display=swap');
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700;900&family=Barlow:wght@400;500;600&display=swap');
+/* ── Variables de tema ── */
+:root {
+  --bg:           #0a0a0a;
+  --bg-grad:      radial-gradient(ellipse at 50% 0%, #0d1f14 0%, #0a0a0a 65%);
+  --text:         #f0f0f0;
+  --text-muted:   rgba(255, 255, 255, 0.5);
+  --text-faint:   rgba(255, 255, 255, 0.35);
+  --accent:       #00ff88;
+  --accent-dark:  #001a0a;
+  --surface:      #111;
+  --surface-2:    #1a1a1a;
+  --border:       rgba(255, 255, 255, 0.1);
+  --border-faint: rgba(255, 255, 255, 0.07);
+  --error-bg:     #1a0808;
+  --error-border: rgba(255, 80, 80, 0.2);
+  --error-text:   #ffcccc;
+  --error-accent: #ff6b6b;
+}
+
+/* ── Tema claro ── */
+.kiosco-root--light {
+  --bg:           #f4f4f0;
+  --bg-grad:      radial-gradient(ellipse at 50% 0%, #e8f5ee 0%, #f4f4f0 65%);
+  --text:         #0a0a0a;
+  --text-muted:   rgba(0, 0, 0, 0.5);
+  --text-faint:   rgba(0, 0, 0, 0.35);
+  --accent:       #007a42;
+  --accent-dark:  #e8f5ee;
+  --surface:      #e8e8e4;
+  --surface-2:    #dcdcd8;
+  --border:       rgba(0, 0, 0, 0.12);
+  --border-faint: rgba(0, 0, 0, 0.07);
+  --error-bg:     #fff0f0;
+  --error-border: rgba(200, 40, 40, 0.2);
+  --error-text:   #8b0000;
+  --error-accent: #cc2222;
+}
 
 body {
-  background: #0a0a0a;
-  color: #f0f0f0;
+  background: var(--bg);
+  color: var(--text);
   font-family: 'Barlow', sans-serif;
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Flash inicial negro mientras carga React */
+html { background: #0a0a0a; }
 
 /* ── Scanner ── */
 #reader,
@@ -31,9 +73,10 @@ body {
   display: flex;
   flex-direction: column;
   padding: 3vh 4vw;
-  background: radial-gradient(ellipse at 50% 0%, #0d1f14 0%, #0a0a0a 65%);
+  background: var(--bg-grad);
   cursor: default;
   user-select: none;
+  transition: background 0.3s, color 0.3s;
 }
 
 /* ── Input HID invisible ── */
@@ -76,12 +119,19 @@ body {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   line-height: 1;
+  color: var(--text);
 }
 .header__subtitle {
   margin-top: 6px;
   font-size: clamp(13px, 1.4vw, 20px);
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   letter-spacing: 0.02em;
+}
+.header__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 /* ── Dot de estado ── */
@@ -93,16 +143,15 @@ body {
   margin-right: 7px;
   vertical-align: middle;
 }
-.status-dot--green  { background: #00ff88; animation: pulse 1.4s ease-in-out infinite; }
+.status-dot--green  { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
 .status-dot--yellow { background: #ffcc00; }
-.status-dot--red    { background: #ff6b6b; }
+.status-dot--red    { background: var(--error-accent); }
 
 /* ── Selector de modo ── */
 .mode-toggle {
   display: inline-flex;
-  margin-top: 14px;
-  background: #111;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -110,7 +159,7 @@ body {
   padding: 9px 20px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted);
   font-family: 'Barlow Condensed', sans-serif;
   font-size: clamp(13px, 1.3vw, 18px);
   font-weight: 700;
@@ -120,15 +169,32 @@ body {
   transition: background 0.2s, color 0.2s;
 }
 .mode-toggle__btn--active {
-  background: #00ff88;
-  color: #001a0a;
+  background: var(--accent);
+  color: var(--accent-dark);
 }
+
+/* ── Toggle tema ── */
+.theme-toggle {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.theme-toggle:hover { background: var(--surface-2); }
 
 /* ── Hint HID ── */
 .hid-hint {
   margin-top: 10px;
   font-size: clamp(12px, 1.2vw, 16px);
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
 }
 
 /* ── Grid principal ── */
@@ -146,47 +212,107 @@ body {
 .camera-panel__reader {
   border-radius: 16px;
   overflow: hidden;
-  background: #111;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--surface);
+  border: 1px solid var(--border-faint);
   width: 100%;
 }
 .camera-panel__loading {
   margin-top: 14px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-muted);
   font-size: clamp(15px, 1.5vw, 22px);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
 /* ── Panel resultado ── */
 .result-panel { width: 100%; text-align: center; }
+
+.result-panel__image-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5vh;
+}
+.result-panel__image {
+  object-fit: contain;
+  border-radius: 14px;
+  background: rgba(128, 128, 128, 0.08);
+  padding: 10px;
+  border: 1px solid var(--border-faint);
+  /* Base — sobreescrito por media queries */
+  width: clamp(140px, 28vw, 360px);
+  height: clamp(140px, 28vw, 360px);
+}
+@media (orientation: landscape) {
+  .result-panel__image {
+    width: clamp(100px, 14vw, 220px);
+    height: clamp(100px, 14vw, 220px);
+  }
+}
+@media (orientation: portrait) {
+  .result-panel__image {
+    width: clamp(160px, 40vw, 320px);
+    height: clamp(160px, 40vw, 320px);
+  }
+}
+
 .result-panel__name {
   font-size: clamp(16px, 1.8vw, 28px);
-  color: rgba(255, 255, 255, 0.75);
-  margin-bottom: 0.5vh;
+  color: var(--text-muted);
+  margin-bottom: 0.3vh;
   min-height: 1.5em;
 }
+
+/* Precio tachado (listPrice) */
+.result-panel__list-price {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: clamp(22px, 3vw, 52px);
+  font-weight: 700;
+  color: var(--text-faint);
+  text-decoration: line-through;
+  text-decoration-color: var(--error-accent);
+  margin-bottom: 0.2vh;
+}
+
 .result-panel__price {
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 900;
-  color: #00ff88;
+  color: var(--accent);
   line-height: 1;
   letter-spacing: -0.01em;
 }
 .result-panel__price--lg { font-size: clamp(72px, 9vw, 160px); }
 .result-panel__price--sm { font-size: clamp(56px, 14vw, 130px); }
+
 .result-panel__ready {
   margin-top: 1.5vh;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-faint);
   font-size: clamp(13px, 1.2vw, 18px);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
+/* ── Barra de progreso del reset ── */
+.reset-bar {
+  margin-top: 1.5vh;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.reset-bar__fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+.reset-bar--error .reset-bar__fill {
+  background: var(--error-accent);
+}
+
 /* ── Panel error ── */
 .error-panel {
-  background: #1a0808;
-  border: 1px solid rgba(255, 80, 80, 0.2);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
   border-radius: 18px;
   padding: 3vh 3vw;
   text-align: center;
@@ -197,15 +323,15 @@ body {
   font-weight: 900;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #ff6b6b;
+  color: var(--error-accent);
   margin-bottom: 8px;
 }
-.error-panel__msg  { font-size: clamp(13px, 1.3vw, 19px); color: #ffcccc; opacity: 0.85; }
-.error-panel__hint { margin-top: 8px; font-size: clamp(12px, 1.1vw, 17px); color: #ffcccc; opacity: 0.55; }
+.error-panel__msg  { font-size: clamp(13px, 1.3vw, 19px); color: var(--error-text); opacity: 0.85; }
+.error-panel__hint { margin-top: 8px; font-size: clamp(12px, 1.1vw, 17px); color: var(--error-text); opacity: 0.55; }
 
 /* ── Panel HID en espera ── */
 .hid-waiting {
-  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border: 1px dashed var(--border);
   border-radius: 18px;
   padding: 4vh 3vw;
   text-align: center;
@@ -216,53 +342,30 @@ body {
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-muted);
 }
 .hid-waiting__sub {
   margin-top: 10px;
   font-size: clamp(13px, 1.3vw, 19px);
-  color: rgba(255, 255, 255, 0.38);
-}
-
-/* ── Imagen del producto ── */
-.result-panel__image-wrap {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 1.5vh;
-}
-.result-panel__image {
-  width: clamp(140px, 28vw, 360px);
-  height: clamp(140px, 28vw, 360px);
-  object-fit: contain;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* En landscape la imagen compite con el precio, la achicamos un poco */
-@media (orientation: landscape) {
-  .result-panel__image {
-    width: clamp(100px, 14vw, 220px);
-    height: clamp(100px, 14vw, 220px);
-  }
-}
-
-/* En portrait hay más espacio vertical, la agrandamos */
-@media (orientation: portrait) {
-  .result-panel__image {
-    width: clamp(160px, 40vw, 320px);
-    height: clamp(160px, 40vw, 320px);
-  }
+  color: var(--text-faint);
 }
 
 /* ── Footer ── */
 .footer {
-  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-top: 2vh;
   font-size: clamp(11px, 1vw, 14px);
-  color: rgba(255, 255, 255, 0.18);
+  color: var(--text-faint);
   letter-spacing: 0.05em;
+}
+.footer__counter {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-size: clamp(12px, 1.1vw, 16px);
+  color: var(--accent);
+  opacity: 0.7;
 }
 
 /* ── Animaciones ── */
