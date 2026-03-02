@@ -228,16 +228,32 @@ body {
 .result-panel__image-wrap {
   display: flex;
   justify-content: center;
-  margin-bottom: 1.2vh;
+  margin-bottom: 1.5vh;
 }
 .result-panel__image {
-  width: clamp(100px, 16vw, 240px);
-  height: clamp(100px, 16vw, 240px);
+  width: clamp(140px, 28vw, 360px);
+  height: clamp(140px, 28vw, 360px);
   object-fit: contain;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.05);
   padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* En landscape la imagen compite con el precio, la achicamos un poco */
+@media (orientation: landscape) {
+  .result-panel__image {
+    width: clamp(100px, 14vw, 220px);
+    height: clamp(100px, 14vw, 220px);
+  }
+}
+
+/* En portrait hay más espacio vertical, la agrandamos */
+@media (orientation: portrait) {
+  .result-panel__image {
+    width: clamp(160px, 40vw, 320px);
+    height: clamp(160px, 40vw, 320px);
+  }
 }
 
 /* ── Footer ── */
