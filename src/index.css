@@ -224,6 +224,22 @@ body {
   color: rgba(255, 255, 255, 0.38);
 }
 
+/* ── Imagen del producto ── */
+.result-panel__image-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.2vh;
+}
+.result-panel__image {
+  width: clamp(100px, 16vw, 240px);
+  height: clamp(100px, 16vw, 240px);
+  object-fit: contain;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 /* ── Footer ── */
 .footer {
   text-align: center;

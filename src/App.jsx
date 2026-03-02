@@ -75,6 +75,7 @@ export default function App() {
   const [mode,        setMode]        = useState("scanning");
   const [productName, setProductName] = useState("");
   const [price,       setPrice]       = useState("");
+  const [imageUrl,    setImageUrl]    = useState("");
   const [errorMsg,    setErrorMsg]    = useState("");
 
   useEffect(() => { beepRef.current = new Audio("/beep.mp3"); }, []);
@@ -120,7 +121,7 @@ export default function App() {
   const scheduleReset = useCallback((delayMs, currentSource) => {
     clearResetTimer();
     resetTimerRef.current = setTimeout(async () => {
-      setMode("scanning"); setProductName(""); setPrice(""); setErrorMsg("");
+      setMode("scanning"); setProductName(""); setPrice(""); setImageUrl(""); setErrorMsg("");
       if (currentSource === "hid") {
         bufferRef.current = ""; inputRef.current?.focus(); return;
       }
@@ -142,6 +143,7 @@ export default function App() {
       const { data } = cached;
       setProductName(data.productName || "Producto");
       setPrice(formatARS(data.cents));
+      setImageUrl(data.imageUrl || "");
       setMode("result");
       scheduleReset(RESET_MS, currentSource);
       return;
@@ -161,9 +163,10 @@ export default function App() {
       if (cents == null || Number.isNaN(Number(cents)) || Number(cents) <= 0)
         throw new Error(NO_PRICE_MSG);
       const n = Number(cents);
-      priceCache.set(codeOrUrl, { data: { productName: data.productName, cents: n }, ts: Date.now() });
+      priceCache.set(codeOrUrl, { data: { productName: data.productName, cents: n, imageUrl: data.imageUrl || "" }, ts: Date.now() });
       setProductName(data.productName || "Producto");
       setPrice(formatARS(n));
+      setImageUrl(data.imageUrl || "");
       setMode("result");
       scheduleReset(RESET_MS, currentSource);
     } catch (err) {
@@ -179,7 +182,8 @@ export default function App() {
     restartingRef.current = true;
     try {
       clearResetTimer();
-      setScanSource("camera"); setMode("scanning"); setErrorMsg(""); setProductName(""); setPrice("");
+      setScanSource("camera"); setMode("scanning"); setErrorMsg("");
+      setProductName(""); setPrice(""); setImageUrl("");
       const reader = document.getElementById("reader");
       if (!reader) throw new Error("Reader missing");
       await stopScanner();
@@ -200,7 +204,8 @@ export default function App() {
 
   const startHidMode = useCallback(() => {
     clearResetTimer(); stopScanner();
-    setScanSource("hid"); setMode("scanning"); setErrorMsg(""); setProductName(""); setPrice("");
+    setScanSource("hid"); setMode("scanning"); setErrorMsg("");
+    setProductName(""); setPrice(""); setImageUrl("");
     bufferRef.current = ""; inputRef.current?.focus();
   }, []);
 
@@ -270,6 +275,16 @@ export default function App() {
         <div className="result-panel">
           {mode === "result" && (
             <div className="fade-in">
+              {imageUrl && (
+                <div className="result-panel__image-wrap">
+                  <img
+                    src={imageUrl}
+                    alt={productName}
+                    className="result-panel__image"
+                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  />
+                </div>
+              )}
               <p className="result-panel__name">{productName}</p>
               <p className={`result-panel__price ${isLandscape ? "result-panel__price--lg" : "result-panel__price--sm"}`}>{price}</p>
               <p className="result-panel__ready">Listo para el próximo…</p>
